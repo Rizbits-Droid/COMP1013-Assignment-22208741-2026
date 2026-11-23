@@ -285,7 +285,7 @@ Credit card is the first in payment usage at 73.92% (76,795 payments), followed 
 
 # Appendix: Version Control (Git)
 
-Repository link: (Todo put the github link here)
+Repository link: https://github.com/Rizbits-Droid/COMP1013-Assignment-22208741-2026
 
 Commit log:
 

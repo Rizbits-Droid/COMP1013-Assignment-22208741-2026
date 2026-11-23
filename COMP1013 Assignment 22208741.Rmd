@@ -48,7 +48,7 @@ By including this statement, I, the author of this work, verify that:
 
 \vspace{1cm}
 
-Signature: \rule{6cm}{0.4pt} \hspace{1cm} Date: \rule{3cm}{0.4pt}
+Signature: \underline{Mochammad Rizky Syofyan} \hspace{1cm} Date: \underline{24 November 2026}
 
 \newpage
 

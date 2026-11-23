@@ -1,0 +1,296 @@
+---
+title: "COMP1013 Analytic Programming Assignment 22208741"
+output:
+  pdf_document:
+    toc: false
+    number_sections: false
+  word_document:
+    toc: false
+geometry: margin=2.5cm
+---
+
+```{r setup, include=FALSE}
+# Global chunk options: show code, hide package messages/warnings,
+# and save plots as PNG so the PDF stays small (some plots have 100,000+ points)
+knitr::opts_chunk$set(echo = TRUE, message = FALSE, warning = FALSE,
+                      dev = "png", dpi = 150,
+                      fig.width = 6.5, fig.height = 4, fig.align = "center",
+                      out.width = "100%")
+library(tidyverse)   # readr, dplyr, ggplot2
+library(knitr)       # kable() for neat tables
+```
+
+<!-- ======================= COVER PAGE ======================= -->
+
+\begin{center}
+\vspace*{1.5cm}
+{\LARGE \textbf{COMP1013 - Analytic Programming}}\\[0.5cm]
+{\Large Assignment 2026}\\[1.5cm]
+\end{center}
+
+**Name:** Mochammad Rizky Syofyan
+
+**Student number:** 22208741
+
+**Subject code and name:** COMP1013 - Analytic Programming
+
+\vspace{0.8cm}
+
+**Declaration**
+
+By including this statement, I, the author of this work, verify that:
+
+- I hold a copy of this assignment that I can produce if the original is lost or damaged.
+- I hereby certify that no part of this assignment/product has been copied from any other student's work or from any other source except where due acknowledgement is made in the assignment.
+- No part of this assignment/product has been written/produced for me by another person except where such collaboration has been authorised by the subject lecturer/tutor concerned.
+- I am aware that this work may be reproduced and submitted to plagiarism detection software programs for the purpose of detecting possible plagiarism (which may retain a copy on its database for future plagiarism checking).
+- I hereby certify that I have read and understand what the School of Computing, Data Science and Mathematics defines as minor and substantial breaches of misconduct as outlined in the learning guide for this unit.
+
+\vspace{1cm}
+
+Signature: \rule{6cm}{0.4pt} \hspace{1cm} Date: \rule{3cm}{0.4pt}
+
+\newpage
+
+<!-- ======================= TASK 1 ======================= -->
+
+# Task 1: Product Prices and Shipping Costs
+
+## Rationale and methodology
+
+A histogram is what i had used for item prices to show how values are spread across price ranges, while a log10 histogram reveals the pattern among the majority of lower-priced items when high-priced items stretch the axis. A left join on product_id keeps every row from order_items so no sales records are lost, and rows with missing weights are filtered out before plotting because points need a valid weight value. In the scatter plot, point transparency prevents heavy overplotting across over 100,000 items and a linear trend line shows the overall direction, while both Pearson and Spearman correlations measure linear and rank-based associations.
+
+## Code
+
+```{r t1-load}
+# Load the two data files needed for Task 1
+order_items <- read_csv("data/order_items.csv")
+products    <- read_csv("data/products.csv")
+```
+
+### Distribution of item prices
+
+```{r t1-stats}
+# Summary statistics for price
+mean_price   <- mean(order_items$price)
+median_price <- median(order_items$price)
+```
+
+```{r t1-hist}
+# Histogram of prices; vertical lines mark the mean and median
+ggplot(order_items, aes(x = price)) +
+  geom_histogram(bins = 50, fill = "steelblue", colour = "white") +
+  geom_vline(aes(xintercept = mean_price,   colour = "Mean"),   linewidth = 1) +
+  geom_vline(aes(xintercept = median_price, colour = "Median"), linewidth = 1) +
+  scale_colour_manual(name = "Statistic",
+                      values = c("Mean" = "red", "Median" = "darkgreen")) +
+  labs(title = "Distribution of item prices",
+       x = "Price (BRL)", y = "Number of items")
+```
+
+```{r t1-hist-log}
+# Prices are heavily right-skewed, so repeat on a log10 axis to see the bulk of the data
+ggplot(order_items, aes(x = price)) +
+  geom_histogram(bins = 50, fill = "steelblue", colour = "white") +
+  scale_x_log10() +
+  labs(title = "Distribution of item prices (log10 scale)",
+       x = "Price (BRL, log scale)", y = "Number of items")
+```
+
+### Freight value vs product weight
+
+```{r t1-join}
+# Join items to products by product_id (left join keeps every order item)
+items_products <- order_items %>%
+  left_join(products, by = "product_id")
+
+# Remove items with no recorded weight, since they can't be plotted
+items_clean <- items_products %>%
+  filter(!is.na(product_weight_g))
+
+n_dropped <- nrow(items_products) - nrow(items_clean)
+```
+
+```{r t1-scatter}
+# Scatter plot; transparency handles overlap, the red line is a linear trend
+ggplot(items_clean, aes(x = product_weight_g, y = freight_value)) +
+  geom_point(alpha = 0.2, colour = "steelblue") +
+  geom_smooth(method = "lm", colour = "red", se = FALSE) +
+  labs(title = "Freight value vs product weight",
+       x = "Product weight (g)", y = "Freight value (BRL)")
+```
+
+```{r t1-cor}
+# Strength of the relationship
+cor_pearson  <- cor(items_clean$product_weight_g, items_clean$freight_value,
+                    method = "pearson")
+cor_spearman <- cor(items_clean$product_weight_g, items_clean$freight_value,
+                    method = "spearman")
+```
+
+## Findings
+
+Because the mean (120.65 BRL) is noticeably higher than the median (74.99 BRL), the price distribution is strongly right-skewed, as we can see that most items sell for relatively modest amounts, while a smaller group of high-priced items pulls the average up. For the business, this means everyday lower-to-mid-priced items drive volume, while higher-priced listings create a long upper tail.
+
+Both correlations are positive (Pearson = 0.610, Spearman = 0.447), this means and shows that heavier items will cost more to ship, with a stronger linear pull than rank consistency. The wide scatter around the trend line happens because freight charges also depend on shipping distance across Brazil, package dimensions/volumetric rules, and carrier pricing, while only 18 rows out of 112,650 had missing weights and were dropped.
+
+\newpage
+
+<!-- ======================= TASK 2 ======================= -->
+
+# Task 2: Orders That Were Not Delivered
+
+## Rationale and methodology
+
+i use a bar chart to compare discrete counts and percentages across categorical variables like order status and state codes. Defining non-delivered orders as order_status != "delivered" captures every order that has not completed delivery (such as shipped, canceled, unavailable, invoiced, processing, created, or approved). Calculating percentages by customer state rather than raw counts normalizes the results so high-volume states do not overshadow regional delivery issues in smaller states, and a left join on customer_id attaches each customer's state while preserving all order records.
+
+## Code
+
+```{r t2-load}
+orders    <- read_csv("data/orders.csv")
+customers <- read_csv("data/customers.csv")
+```
+
+### Orders by status
+
+```{r t2-status}
+# Number and percentage of orders in each status
+status_counts <- orders %>%
+  count(order_status, name = "n_orders") %>%
+  mutate(percentage = n_orders / sum(n_orders) * 100) %>%
+  arrange(desc(n_orders))
+
+kable(status_counts, digits = 2,
+      col.names = c("Order status", "Orders", "Percentage (%)"))
+```
+
+```{r t2-status-bar}
+# Bar chart; labels show the percentage of all orders
+ggplot(status_counts, aes(x = reorder(order_status, -n_orders), y = n_orders)) +
+  geom_col(fill = "steelblue") +
+  geom_text(aes(label = sprintf("%.2f%%", percentage)), vjust = -0.5, size = 3) +
+  labs(title = "Number of orders by status",
+       x = "Order status", y = "Number of orders")
+```
+
+```{r t2-pct}
+# Share of orders whose status is anything other than "delivered"
+pct_not_delivered <- mean(orders$order_status != "delivered") * 100
+```
+
+### Not delivered by customer state
+
+```{r t2-state}
+# Attach each customer's state to their orders
+orders_customers <- orders %>%
+  left_join(customers, by = "customer_id")
+
+# Per state: total orders and % not delivered
+state_summary <- orders_customers %>%
+  group_by(customer_state) %>%
+  summarise(total_orders      = n(),
+            not_delivered     = sum(order_status != "delivered"),
+            pct_not_delivered = not_delivered / total_orders * 100) %>%
+  arrange(desc(pct_not_delivered))
+```
+
+```{r t2-state-bar, fig.height=6}
+# Horizontal bar chart so state codes are easy to read
+ggplot(state_summary, aes(x = reorder(customer_state, pct_not_delivered),
+                          y = pct_not_delivered)) +
+  geom_col(fill = "tomato") +
+  coord_flip() +
+  labs(title = "Percentage of orders not delivered, by customer state",
+       x = "Customer state", y = "Orders not delivered (%)")
+```
+
+## Findings
+
+what i had found is that the vast majority of orders were successfully delivered (97.02%, or 96,478 orders), leaving 2.98% (2,963 orders) not delivered. Within that 2.98% non-delivered group, the largest shares are shipped (1.11%), canceled (0.63%), and unavailable (0.61%), with smaller shares in invoiced (0.32%), processing (0.30%), created (0.01%), and approved (0.002%).
+
+Roraima (RR) has the highest non-delivery percentage at 10.87%, followed by Sergipe (SE, 4.29%) and Ceará (CE, 4.27%), whereas Acre (AC, 1.23%) and Amapá (AP, 1.47%) have the lowest rates. However, states with very small order counts—such as RR (46 orders), AP (68 orders), and AC (81 orders)—suffer from a small-sample caveat where just a few undelivered orders shift the percentage sharply, whereas high-volume states like São Paulo (SP, 41,746 orders at 2.98%) reflect much more stable rates; long shipping distances and regional logistics infrastructure may contribute to these differences, though the dataset alone cannot prove exact causes.
+
+\newpage
+
+<!-- ======================= TASK 3 ======================= -->
+
+# Task 3: Payment Methods
+
+## Rationale and methodology
+
+i decided to use a bar chart because it can clearly displays how frequently each payment method is used, while a boxplot compares the median, interquartile range, and spread of payment amounts across the payment types. Because payment values are heavily right-skewed with extreme outliers, a log10 vertical axis makes the boxes and medians much easier to compare, and zero-value payments (the 3 not_defined records) are dropped for the log plot only because log10(0) is unclear.
+
+## Code
+
+```{r t3-load}
+payments <- read_csv("data/payments.csv")
+```
+
+### Usage frequency
+
+```{r t3-freq}
+# Number and percentage of payments per type
+type_counts <- payments %>%
+  count(payment_type, name = "n_payments") %>%
+  mutate(percentage = n_payments / sum(n_payments) * 100) %>%
+  arrange(desc(n_payments))
+
+kable(type_counts, digits = 2,
+      col.names = c("Payment type", "Payments", "Percentage (%)"))
+```
+
+```{r t3-bar}
+ggplot(type_counts, aes(x = reorder(payment_type, -n_payments), y = n_payments)) +
+  geom_col(fill = "steelblue") +
+  geom_text(aes(label = sprintf("%.2f%%", percentage)), vjust = -0.5, size = 3) +
+  labs(title = "Number of payments by payment type",
+       x = "Payment type", y = "Number of payments")
+```
+
+### Payment values by type
+
+```{r t3-summary}
+# Numerical summary per type, to support the boxplot
+value_summary <- payments %>%
+  group_by(payment_type) %>%
+  summarise(n      = n(),
+            mean   = mean(payment_value),
+            median = median(payment_value),
+            q1     = quantile(payment_value, 0.25),
+            q3     = quantile(payment_value, 0.75),
+            max    = max(payment_value))
+
+kable(value_summary, digits = 2)
+```
+
+```{r t3-box}
+# Log scale because values are very right-skewed. log10(0) is undefined,
+# so zero-value payments are dropped for this plot only.
+payments %>%
+  filter(payment_value > 0) %>%
+  ggplot(aes(x = payment_type, y = payment_value, fill = payment_type)) +
+  geom_boxplot(show.legend = FALSE) +
+  scale_y_log10() +
+  labs(title = "Payment value by payment type (log10 scale)",
+       x = "Payment type", y = "Payment value (BRL, log scale)")
+```
+
+## Findings
+
+Credit card is the first in payment usage at 73.92% (76,795 payments), followed by boleto—a traditional Brazilian bank-slip payment method—at 19.04% (19,784), voucher at 5.56% (5,775), debit card at 1.47% (1,529), and not_defined at 0.003% (3). Comparing medians and box positions rather than means alone, credit_card (median 106.87 BRL), boleto (median 93.89 BRL), and debit_card (median 89.30 BRL) are used for larger order amounts, whereas voucher has a much lower median (39.28 BRL), suggesting vouchers are typically used for smaller purchases, discounts, or partial payments, the other 3 not_defined records have 0.00 BRL values, meaning its the incomplete or unrecorded payment entries.
+
+\newpage
+
+<!-- ======================= APPENDIX ======================= -->
+
+# Appendix: Version Control (Git)
+
+Repository link: (Todo put the github link here)
+
+Commit log:
+
+```{r git-log, echo=FALSE, error=TRUE}
+# Prints the commit history (needs Git installed and this file inside the repo)
+cat(system("git log --pretty=format:'%h  %ad  %s' --date=short", intern = TRUE),
+    sep = "\n")
+```
